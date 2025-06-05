@@ -6,7 +6,6 @@ import statsmodels.api as sm
 from scipy.stats import pearsonr
 import pandas as pd
 from scipy.stats import norm, uniform, stats
-from sklearn.metrics import confusion_matrix, roc_curve, roc_auc_score
 
 class AnalisisDescriptivo:
     def __init__(self, datos):
