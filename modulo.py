@@ -6,6 +6,10 @@ import statsmodels.api as sm
 from scipy.stats import pearsonr
 import pandas as pd
 from scipy.stats import norm, uniform, stats
+from statsmodels.stats.diagnostic import het_breuschpagan, het_white
+from scipy.stats import shapiro
+import random
+from sklearn.metrics import auc
 
 class AnalisisDescriptivo:
     def __init__(self, datos):
@@ -122,6 +126,23 @@ class AnalisisDescriptivo:
             'Mínimo': np.min(self.datos),
             'Máximo': np.max(self.datos)
         }
+    def miqqplot(data):
+        x_ord = np.sort(data)
+        n = len(data)
+        media = np.mean(x_ord)
+        desvio = np.std(x_ord, ddof=1)
+        cuantiles_muestrales = (x_ord - media) / desvio
+
+        probabilidades = np.arange(1, n+1) / n+1
+        cuantiles_teoricos = norm.ppf(probabilidades)
+
+        sm.qqplot(data, line='45')
+
+        plt.scatter(cuantiles_teoricos, cuantiles_muestrales, color='blue', marker='o')
+        plt.xlabel('Cuantiles teóricos')
+        plt.ylabel('Cuantiles muestrales')
+        plt.plot(cuantiles_teoricos,cuantiles_teoricos , linestyle='-', color='red')
+        plt.show()
 
 
 class GeneradoraDeDatos:
@@ -159,205 +180,561 @@ class GeneradoraDeDatos:
         return p
 
 
-class Regresion:
-  pass
-
-
-class RegresionLineal(Regresion):
+class RegresionLineal:
+    """Clase que permite el ajuste de un modelo de Regresion Lineal, que puede
+        ser Regresion Lineal Simple y Regresion Lineal Multiple.
+        Ambas clases depende de esta clase general.
+    """
     def __init__(self, x, y):
-        self.x = np.array(x)
-        self.y = np.array(y)
-        self.n = len(x)
-        self.x_bar = np.mean(self.x)
-        self.y_bar = np.mean(self.y)
-        self.b1 = self.calcular_pendiente()
-        self.b0 = self.calcular_ordenada_origen()
+        # x = variables predictora/s
+        # y = variable respuesta
+        self.x = x
+        self.y = y
+        self.resultado = None
 
-    def calcular_pendiente(self):
-        """Calcula la pendiente de la recta de regresión"""
-        return np.sum((self.x - self.x_bar) * (self.y - self.y_bar)) / np.sum((self.x - self.x_bar) ** 2)
+    def ajustar_modelo(self):
+        """Se ajuta el modelo de Regresión.
+        """
+        # se arma la matriz de diseño agregando la columna de unos
+        X = sm.add_constant(self.x)
+        # se estima el modelo de regresión lineal
+        modelo = sm.OLS(self.y, X)
+        self.resultado = modelo.fit()
+        return self.resultado
 
-    def calcular_ordenada_origen(self):
-        """Calcula la ordenada al origen de la recta de regresión"""
-        return self.y_bar - self.b1 * self.x_bar
+    def parametros_modelo(self):
+        """ Retorna las estimaciones de los betas
+            del modelo.
+        """
+        if self.resultado is None:
+          print("Falta ajustar el modelo, usar ajustar_modelo()")
+        else:
+          parametros = self.resultado.params
+          return parametros
 
-    def predecir(self, x):
-        """Devuelve el valor predicho de y para un valor o arreglo de x"""
-        return self.b0 + self.b1 * np.array(x)
+    def ajustado_y(self):
+        """Calula el valor predicho a partir del modelo ajustado
+          de regresion lineal.
+        """
+        if self.resultado is None:
+          print("Falta ajustar el modelo, usar ajustar_modelo()")
+        else:
+          y_pred = self.resultado.fittedvalues
+          return y_pred
 
     def residuos(self):
-        """Devuelve los residuos del modelo"""
-        return self.y - self.predecir(self.x)
-
-    def graficar_dispersion(self):
-        """Grafica los puntos originales y la recta de regresión"""
-        plt.figure(figsize=(8, 6))
-        sns.scatterplot(x=self.x, y=self.y, label='Datos observados')
-        plt.plot(self.x, self.predecir(self.x), color='red', label='Recta de regresión')
-        plt.xlabel('x')
-        plt.ylabel('y')
-        plt.title('Gráfico de dispersión con recta de regresión')
-        plt.legend()
-        plt.grid(True)
-        plt.show()
-
-    def graficar_residuos(self):
-        """Grafica los residuos del modelo"""
-        plt.figure(figsize=(8, 6))
-        sns.residplot(x=self.x, y=self.y, lowess=True, line_kws={'color': 'red'})
-        plt.xlabel('x')
-        plt.ylabel('Residuos')
-        plt.title('Gráfico de residuos')
-        plt.axhline(0, color='black', linestyle='--')
-        plt.grid(True)
-        plt.show()
-
-    def coeficiente_correlacion(self):
-        """Calcula y devuelve el coeficiente de correlación de Pearson"""
-        r, _ = pearsonr(self.x, self.y)
-        return r
-
-    def graficar_qqplot_residuos(self):
-        """Genera un Q-Q plot de los residuos para evaluar la normalidad"""
-        residuos = self.residuos()
-        stats.probplot(residuos, dist="norm", plot=plt)
-        plt.title("Q-Q Plot de los residuos")
-        plt.grid(True)
-        plt.show()
-
-    def ajustar_con_statsmodels(self):
-        """Ajusta el modelo utilizando statsmodels y muestra el resumen"""
-        X = sm.add_constant(self.x)
-        modelo = sm.OLS(self.y, X).fit()
-        print(modelo.summary())
-        return modelo
-
-    def intervalos_confianza_prediccion(self, x_nuevos, alpha=0.05):
+        """ Calcula los residuos de entre los valores reales (y)
+            y los valores dados por la recta d eminimos cuadrados (y_sombrero)
         """
-        Calcula intervalos de confianza y predicción para nuevos valores de x
-        Parámetros:
-        - x_nuevos: lista o array de nuevos valores de x
-        - alpha: nivel de significancia (default 0.05 = 95% confianza)
-        Devuelve:
-        - Un DataFrame con las predicciones y los intervalos
+        if self.resultado is None:
+          print("Falta ajustar el modelo, usar ajustar_modelo()")
+        else:
+          residuos = self.resultado.resid
+          return residuos
+
+    def estim_varianza_del_error(self):
+        """Calcula la estimacion de la varianza del error
         """
-        X = sm.add_constant(self.x)
-        modelo = sm.OLS(self.y, X).fit()
-        X_nuevos = sm.add_constant(np.array(x_nuevos))
-        predicciones = modelo.get_prediction(X_nuevos)
-        resumen = predicciones.summary_frame(alpha=alpha)
-        return resumen
+        n = len(self.x)
+        resid = self.residuos()
+        var = np.sum( resid**2 ) / (n-2)
+        return var
 
     def r_cuadrado(self):
-        """Calcula y devuelve el coeficiente de determinación R²"""
-        ss_total = np.sum((self.y - self.y_bar) ** 2)
-        ss_res = np.sum((self.y - self.predecir(self.x)) ** 2)
-        return 1 - ss_res / ss_total
-
-    def r_cuadrado_ajustado(self):
-        """Calcula y devuelve el R² ajustado"""
-        r2 = self.r_cuadrado()
-        return 1 - (1 - r2) * (self.n - 1) / (self.n - 2)
-
-class RegresionLogistica(Regresion):
-    def __init__(self, X, y, porcentaje_train=0.7):
+        """ Calcula (R^2) el coeficiente de determinación y, es una medida de la
+            proporción de la variabilidad que explica el modelo ajustado.
+            valores de  R^2  cercanos a 1 son valores deseables para una buena
+            calidad del ajuste.
         """
-        Ajusta el modelo de regresión logística usando statsmodels.
+        if self.resultado is None:
+          print("Falta ajustar el modelo, usar ajustar_modelo()")
+        else:
+          r_squared = self.resultado.rsquared
+          return r_squared
 
-        Parámetros:
-        - X: matriz de características (numpy array o DataFrame)
-        - y: vector de etiquetas (numpy array o Series)
-        - porcentaje_train: proporción de los datos usados para el entrenamiento
+    def r_ajustado(self):
+        """Calcula el R² ajustado, es una corrección de  R^2  para permitir
+          la comparación de modelos con distinta cantidad de regresoras.
         """
-        self.X = sm.add_constant(np.array(X))  # Agrega intercepto
-        self.y = np.array(y)
-        self.porcentaje_train = porcentaje_train
+        if self.resultado is None:
+          print("Falta ajustar el modelo, usar ajustar_modelo()")
+        else:
+          adjusted_r_squared = self.resultado.rsquared_adj
+          return adjusted_r_squared
 
-        # Separar datos en train y test
-        n_train = int(len(self.y) * porcentaje_train)
-        self.X_train = self.X[:n_train]
-        self.y_train = self.y[:n_train]
-        self.X_test = self.X[n_train:]
-        self.y_test = self.y[n_train:]
+    def supuesto_normalidad(self):
+      """Se verifica el supuesto de normalidad de los residuos, de manera
+         grafica usando qqplot y de manera analítica usando shapiro test, usando
+         el p-valor.
+      """
+      residuo = self.residuos()
+      # grafica:
+      rg = AnalisisDescriptivo(residuo)
+      #miqqplot(residuo)
+      rg.miqqplot()
 
-        # Ajustar modelo
-        self.modelo = sm.Logit(self.y_train, self.X_train).fit(disp=False)
+      # test de normalidad:
+      stat, p_valor1 = shapiro(residuo)
+      print("\nValor p normalidad:", p_valor1)
 
-        # Guardar estadísticas del modelo
-        self.betas = self.modelo.params
-        self.errores_std = self.modelo.bse
-        self.t_obs = self.modelo.tvalues
-        self.p_valores = self.modelo.pvalues
+    def supuestos_homocedasticidad(self):
+      """Se verifica el supuesto de homocedasticidad de los residuos, de
+          manera grafica y analítica por medio del p-valor.
+      """
+      # Homocedasticidad grafico
+      predichos = self.ajustado_y()
+      residuo = self.residuos()
 
-    def resumen(self):
-        """Imprime los coeficientes, errores estándar, t_obs y p-valores."""
-        resumen = pd.DataFrame({
-            "Beta": self.betas,
-            "Error estándar": self.errores_std,
-            "t_obs": self.t_obs,
-            "p_valor": self.p_valores
-        })
-        print(resumen)
+      plt.scatter(predichos, residuo, marker="o", c='blue', s=30)
+      plt.axhline(y=0, color='r', linestyle='--')  # Línea horizontal en y=0 para facilitar la visualización de los residuos
+      plt.xlabel('Valores predichos')
+      plt.ylabel('Residuos')
+      plt.title('Gráfico de Residuos vs. Valores Predichos')
+      plt.show()
+      # Homocedasticidad test:
+      X = sm.add_constant(self.x) # matriz de diseño
+      bp_test = het_breuschpagan(residuo, X)# X es la matriz de diseño
+      bp_value = bp_test[1]
+      print("\nValor p Homocedasticidad:", bp_value)
 
-    def predecir(self, X_nuevos, umbral=0.5):
+    def int_confianza_betas(self, alfa):
+        """funcion inicial: int_confianza_beta1(alfa, beta_1, var_estimada, t_crit)
+        Calcula el intervalor de confianza para beta_1, a partir de un alfa (nivel
+        de significacion) dado.
         """
-        Realiza predicciones sobre nuevos datos usando un umbral.
+        if self.resultado is None:
+          print("Falta ajustar el modelo, usar ajustar_modelo()")
+        else:
+          IC = self.resultado.conf_int(alpha = alfa)
+          print(f"Los Intervalos de confianza para los estimadores de beta son: {IC}")
 
-        Parámetros:
-        - X_nuevos: datos nuevos (sin columna de 1s)
-        - umbral: valor de corte para clasificar
-
-        Devuelve:
-        - array con predicciones (0 o 1)
+    def p_valor_betas(self, b_i=0, i=1):
+        """Es una funcion que retorna el p-valor de un test de hipotesis:
+                          H_0: beta_i = k vs H_1 beta_i != k
+            b_i: es el numero k sobre el cual se quiere hacer el test. Por
+            default es 0.
+            i: es el indice del beta que se quiere testear, es un natural i
+            (i = 0, ..., n). Por default es 1.
         """
-        X_nuevos = sm.add_constant(np.array(X_nuevos))
-        probas = self.modelo.predict(X_nuevos)
-        return (probas >= umbral).astype(int)
+        if self.resultado is None:
+          print("Falta ajustar el modelo, usar ajustar_modelo()")
+        else:
+          res = self.resultado
+          SE_est = res.bse
+          coef_xi = res.params[i]
+          # valor de t observado:
+          t_obs = (coef_xi - b_i)/SE_est[i]
 
-    def evaluar_test(self, umbral=0.5):
+          # el pvalor:
+          X = res.model.exog # para recuperar la matriz de diseño del modelo
+          grados_libertad = len(X[:, i]) - 2
+          p_valor = 2 * stats.t.sf(abs(t_obs), df = grados_libertad)
+
+          return p_valor
+
+    def resumen_grafico(self, z):
+        """ Grafico de dispersion de una variable cuantitativa predictora vs
+            respuesta.
+            z es la variable cuantitativa predictora que se quiere graficar.
         """
-        Calcula métricas en los datos de test: matriz de confusión, sensibilidad, especificidad y error total.
-        """
-        pred = self.predecir(self.X_test[:, 1:], umbral)  # quitar columna del intercepto
-        cm = confusion_matrix(self.y_test, pred)
-
-        TN, FP, FN, TP = cm.ravel()
-        sensibilidad = TP / (TP + FN)
-        especificidad = TN / (TN + FP)
-        error_total = (FP + FN) / len(self.y_test)
-
-        print("Matriz de confusión:")
-        print(cm)
-        print(f"Sensibilidad (TPR): {sensibilidad:.4f}")
-        print(f"Especificidad (TNR): {especificidad:.4f}")
-        print(f"Error total: {error_total:.4f}")
-
-    def curva_roc(self):
-        """Grafica la curva ROC y calcula el área bajo la curva (AUC)."""
-        probas = self.modelo.predict(self.X_test)
-        fpr, tpr, thresholds = roc_curve(self.y_test, probas)
-        auc = roc_auc_score(self.y_test, probas)
-
-        plt.figure()
-        plt.plot(fpr, tpr, label=f"AUC = {auc:.4f}")
-        plt.plot([0, 1], [0, 1], 'k--')
-        plt.xlabel("FPR (1 - especificidad)")
-        plt.ylabel("TPR (sensibilidad)")
-        plt.title("Curva ROC")
-        plt.legend()
-        plt.grid(True)
+        plt.scatter(z, self.y, marker="o", c='blue', s=30)
+        plt.xlabel('Variable Predictora')
+        plt.ylabel('Variable Respuesta')
+        plt.title('Gráfico de Dispersion: Var.Predict. vs. Var. Respuesta')
         plt.show()
 
-        # Evaluación según AUC
-        print(f"Área bajo la curva (AUC): {auc:.4f}")
-        if auc >= 0.9:
-            interpretacion = "Excelente"
-        elif auc >= 0.8:
-            interpretacion = "Muy bueno"
-        elif auc >= 0.7:
-            interpretacion = "Bueno"
-        elif auc >= 0.6:
-            interpretacion = "Regular"
+
+class RegresionLinealSimple(RegresionLineal):
+    """Clase regresion Lineal Simple, hereda funciones de Regresion Lineal.
+    """
+    def __init__(self, x, y):
+        super().__init__(x, y)
+
+    def estimacion_betas(self):
+        """Retorna una tupla (b_0, b_1) de los estimadores de beta_0 y beta_1,
+            usando minimos cuadrados.
+        """
+        x_media = np.mean(self.x)
+        y_media = np.mean(self.y)
+        numerador = np.sum((self.x - x_media) * (self.y - y_media))
+        denominador = np.sum((self.x - x_media)**2)
+        b_1 = numerador / denominador
+        b_0 = y_media - b_1 * x_media
+        return (b_0, b_1)
+
+    def graf_scatter_recta(self):
+        """Grafica los puntos de la variable predictora vs vaiable de respuesta.
+          Ademas grafica la recta de minimos cuadrados.
+        """
+        # el regresor lineal:
+        b_0, b_1 = self.estimacion_betas()
+        y_pred = b_0 + b_1 * self.x
+        # el grafico:
+        plt.scatter(self.x, self.y, marker="o", c='blue', label='Datos', s=30)
+        plt.plot(self.x, y_pred, linestyle='--', color='red', label='Recta estimada')
+        plt.legend()
+        plt.xlabel("variable predictora")
+        plt.ylabel("variable respuesta")
+        plt.title('')
+        plt.show()
+
+    def y_predict_x_new(self, x_new):
+        """Retorna el valor de un y_predicho del modelo de regresion
+          a partir de un nuevo valor de x: x_new.
+        """
+        if self.resultado is None:
+          print("Falta ajustar el modelo, usar ajustar_modelo()")
+
         else:
-            interpretacion = "Pobre"
-        print(f"Evaluación del clasificador: {interpretacion}")
+          res = self.resultado
+          # Crear la matriz de diseño con el nuevo punto de predicción
+          X_new = sm.add_constant(np.array([[1, x_new]]))
+          prediccion = res.predict(X_new)
+          return prediccion
+
+    def t_obs_b1(self, b1=0):
+        """Funcion que calcula del t observado para determinar el sgte. test
+                      H_0: beta_1 = 0 vs H_1: beta_1 != 0
+          Donde b es el valor que toma beta_1, por defecto es 0, porque se evalua
+          el test de arriba.
+          Pero b=1 si se evaluara el test: H_0: beta_1 = 1 vs H_1: beta_1 != 1.
+        """
+        if self.resultado is None:
+          print("Falta ajustar el modelo, usar ajustar_modelo()")
+        else:
+          res = self.resultado
+          coef_x = res.params[1]
+          # error estándar estimado para el estimador de los betas
+          SE_est = res.bse
+
+          # valor de t observado:
+          t_obs = (coef_x - b1) / SE_est[1] # SE_est[1] es el error estandar
+                                          # estimado para el estimador beta_1
+          return t_obs
+
+    def reg_rechazo_b1(self, alfa):
+        """Funcion que muestra la region de rechazo para la hipotesis nula H_0
+          a favor  de aceptar la hipotesis alternativa H_1.
+        """
+        ## Completar
+        #alfa = 0.05
+        grados_libertad = len(self.x) - 2
+        t_crit = stats.t.ppf(  1 - (alfa/2), df = grados_libertad )
+        print(f"(-inf, {-t_crit}) U ({t_crit}, inf)")
+
+    def p_valor_beta(self, b1=0):
+        """calcula el p-valor para evaluar el test de hipotesis:
+                      H_0: beta_1 = 0 vs H_1: beta_1 != 0
+        """
+        t_observado = self.t_obs_b1(b1)
+        grados_libertad = len(self.x)  - 2
+        p_valor = 2 * stats.t.sf(abs(t_observado), df = grados_libertad)
+        return p_valor
+
+    def int_confianza_betas(self, alfa):
+        """funcion inicial: int_confianza_beta1(alfa, beta_1, var_estimada, t_crit)
+        Calcula el intervalor de confianza para beta_1, a partir de un alfa (nivel
+        de significacion) dado.
+        """
+
+        if self.resultado is None:
+          print("Falta ajustar el modelo, usar ajustar_modelo()")
+        else:
+          IC = self.resultado.conf_int()
+          print(f"Intervalo de confianza para beta_1 es: {IC[1]}")
+
+    def int_prediccion_y(self, metodo, x_new, alfa):
+        """Calcula el intervalo de predccion de una Y, a partir de una x_new,
+          usando los metodos:
+          Metodo 1:  Construir un intervalo de confianza para el valor esperado de
+                    Y para un valor particular de  X , por ejemplo  x0 :  E(Y|X=x0)
+
+          Metodo 2: Construir un intervalo de predicción de  Y  para un valor
+                    particular de  X , por ejemplo  x0 :  Y0 .
+          se obtiene un intervalo de confianza/prediccion de nivel (1-alfa)
+        """
+        if self.resultado is None:
+          print("Falta ajustar el modelo, usar ajustar_modelo()")
+        else:
+          res = self.resultado
+          # Crear la matriz de diseño con el nuevo punto de predicción:
+          X_new = sm.add_constant(np.array([[1, x_new]]))
+          prediccion = res.get_prediction(X_new)
+
+          if metodo == 1:
+            return prediccion.conf_int(alpha= alfa, obs = False)
+
+          elif  metodo == 2:
+            return prediccion.conf_int(obs=True , alpha = alfa)
+
+class RegresionLinealMultiple(RegresionLineal):
+    """Clase quepermite ajustar, predcir un modelo de Regresion Lineal
+        Multiple.
+    """
+    def __init__(self, x, y):
+          super().__init__(x, y)
+
+    def y_predict_x_new(self, x_new):
+        """Retorna el valor de un y_predicho del modelo de regresion
+          a partir de un nuevo valor de x.
+          x_new debe ser una LISTA con los valores qeu toma la variable
+          explicativa para predecir.
+        """
+        if self.resultado is None:
+          print("Falta ajustar el modelo, usar ajustar_modelo()")
+
+        else:
+          res = self.resultado
+          # Se crea una lista nueva con un 1 en la posicion 0
+          # considerando la lista x_new, asi: [1, x_new[0], x_new[1]]
+          X_new = x_new.copy()
+          X_new.insert(0, 1)
+          prediccion = np.dot(res.params, X_new)
+
+          return prediccion
+
+    def resumen_modelo(self):
+        """Imprime el summary() del modelo ajustado.
+        """
+        if self.resultado is None:
+          print("Falta ajustar el modelo, usar ajustar_modelo()")
+
+        else:
+          res = self.resultado
+          print(res.summary())
+
+
+class RegresionLogistica:
+    """Clase que ajusta un modelo de Regresion Logistica.
+       Requerimiento: Las variables categoricas sean codificadas antes de ajustar
+       el modelo.
+       Data es una base de datos con variables que sean cuantitativas.
+    """
+
+    def __init__(self, data):
+        self.data = data
+        self.data_train = None
+        self.data_test = None
+        self.x_train = None
+        self.y_train = None
+        self.x_test = None
+        self.y_test = None
+        self.resultado = None
+
+    def separar_data_train_test(self, seed = 10, ptje_test = 0.20):
+        """Funcion que separa data, de manera aleatoria, en set de train y test.
+           seed: es la semilla, por default es 10.
+           ptje_test: Default= 0.20. Es el valor entre 0 y 1, es la proporcion
+           que se quiere dejar para el conjunto test, tomado de self.data.
+        """
+        random.seed(seed)
+        cant_filas_extraer = int(self.data.shape[0] * ptje_test)
+        # Crear un vector de números aleatorios entre 0 y len(data)
+        cuales = random.sample(range( int(self.data.shape[0]) + 1 ), cant_filas_extraer)
+        # datos train:
+        self.data_train = self.data.drop(cuales)
+        # datos test:
+        self.data_test = self.data.iloc[cuales]
+
+        return self.data_test, self.data_train
+
+    def ajustar_modelo(self, x_train, y_train, x_test, y_test):
+        """Se ajusta el modelo de Regresión Logistica.
+        """
+        self.x_train = x_train
+        self.y_train = y_train
+        self.x_test = x_test
+        self.y_test = y_test
+        # se arma la matriz de diseño agregando la columna de unos
+        X = sm.add_constant(self.x_train)
+        # se estima el modelo de Regresión Logistica
+        modelo = sm.Logit(self.y_train, X)  # esto es lo nuevo
+        self.resultado = modelo.fit()
+        return self.resultado
+
+    def parametros_modelo(self):
+        """ Retorna las estimaciones de los betas
+            del modelo.
+        """
+        if self.resultado is None:
+          print("Falta ajustar el modelo, usar ajustar_modelo()")
+        else:
+          parametros = self.resultado.params
+          return parametros
+
+    def ajustados_y(self, prob=0.5):
+        """Calula el valor predicho a partir del modelo ajustado
+          de regresion lineal.
+          prob: es el umbral de probabilidad sobre el cual se considera
+          para formar el y_ajustado.
+          Retorna una tupla: y_ajustado_binary, ajust_y_prob
+        """
+        if self.resultado is None:
+          print("Falta ajustar el modelo, usar ajustar_modelo()")
+        else:
+          X_test = sm.add_constant(self.x_test)
+          ajust_y_prob = self.resultado.predict(X_test) #probabilidad del "y" ajustado
+          # lo que sigue es el "y" ajustado como binario, de acuerdo al "prob" usado:
+          y_ajustado_binary = [1 if k >= prob else 0 for k in ajust_y_prob]
+
+          return y_ajustado_binary, ajust_y_prob
+
+    def matriz_confusion(self, prob=0.5):
+        """Retorna la Matriz de Confusión:
+                      |tp     fp|
+                      |fn     tn|
+          por medio de una lista de la forma [tp, fp, fn, tn]
+          prob es la probabilidad.
+        """
+        if self.resultado is not None:
+          y_ajustado = self.ajustados_y(prob)[0]
+          n = len(self.y_test)
+          tp = 0 # true positive
+          tn = 0 # true negative
+          fp = 0 # false positive
+          fn = 0 # falso negativo
+          for i in range(n):
+            if y_ajustado[i] == self.y_test.iloc[i]:
+              if y_ajustado[i] == 1:
+                tp = tp + 1
+              else:
+                tn = tn + 1
+            else:
+              if y_ajustado[i] == 1 and self.y_test.iloc[i] == 0:
+                fp = fp + 1
+              else:
+                fn = fn + 1
+          #print(f" {tp}   {fp} \n {fn}   {tn}")
+          return [tp, fp, fn, tn]
+        else:
+          print("Correr primero ajustados_y()")
+
+    def especif_sensib(self, prob=0.5):
+        """Retorna una lista con la sensibilidad y especifisidad del modelo
+           Regresión Logística, como sigue: [sensibilidad, especificidad].
+           prob: es el umbral de probabilidad sobre el cual se determina si una
+           respuesta es 0 o 1. Default = 0.5
+        """
+        matrix_conf = self.matriz_confusion(prob)
+        tp = matrix_conf[0]
+        fp = matrix_conf[1]
+        fn = matrix_conf[2]
+        tn = matrix_conf[3]
+
+        sensibilidad = tp / (tp + fn)
+        especificidad = tn / (fp + tn)
+
+        #print(f"La sensibilidad del modelo es: {sensibilidad}")
+        #print(f"La especificidad del modelo es: {especificidad}")
+        return [sensibilidad, especificidad]
+
+    def curva_ROC(self, prob=0.5):
+        """prob: es el umbral de probabilidad sobre el cual se determina si una
+           respuesta es 0 o 1. Default = 0.5
+        """
+        if self.resultado is not None:
+          grid = np.linspace(0, 1, 100)
+          l1 = [] # 1-especificidad
+          l2 = [] # sensibilidad
+          prediccion = self.ajustados_y(prob)[1]
+          for j in grid:
+            y_pred_binary = [1 if k >= j else 0 for k in prediccion]
+            metrica = self.especif_sensib(j)
+            especificidad = metrica[1]
+            sensibilidad = metrica[0]
+            l1.append(1-especificidad)
+            l2.append(sensibilidad)
+
+          plt.plot()
+          plt.plot(l1,l2, linestyle='-', color='red', label='Curva ROC')
+          plt.legend()
+          plt.xlabel("1-especificidad")
+          plt.ylabel("sensibilidad")
+          plt.title('Curva ROC')
+          plt.show()
+
+        else:
+          print("Falta ajustar el modelo, usar ajustar_modelo()")
+
+    def predict_y(self, x_new, prob=0.5):
+        """x_new es una lista, con el/los valor/es que se quiere predecir.
+          La funcion retorna el valor de predicciòn para un x_new.
+          prob: es el umbral de probabilidad sobre el cual se determina si una
+           respuesta es 0 o 1. Default = 0.5
+        """
+        X_new = x_new.copy()
+        X_new.insert(0, 1)
+        aux = np.dot(self.resultado.params, X_new)
+        pred = np.exp(aux)/(1 + np.exp(aux))
+        if pred >= prob:
+          y_pred_bin = 1
+        else:
+          y_pred_bin = 0
+
+        return y_pred_bin
+
+    def auc(self,prob=0.5):
+        """Imprime la evaluacion del clasificador, teniendo en cuenta la tabla
+            dada en teoría.
+        """
+        if self.resultado is not None:
+          grid = np.linspace(0, 1, 100)
+          especificidad_list = []
+          sensibilidad_list = []
+          for k in grid:
+            metrica = self.especif_sensib(k)
+            especificidad = metrica[1]
+            sensibilidad = metrica[0]
+            especificidad_list.append(1-especificidad)
+            sensibilidad_list.append(sensibilidad)
+
+          roc_auc = auc(1-np.array(especificidad_list), sensibilidad_list)
+          #print("AUC:", roc_auc)
+          if 0.90 < roc_auc <= 1:
+            print(f"El clasificador es Excelente, {roc_auc}")
+          elif 0.80 < roc_auc <= 0.90:
+            print(f"El clasificador es Bueno, {roc_auc}")
+          elif 0.70 < roc_auc <= 0.80:
+            print(f"El clasificador es Regular, {roc_auc}")
+          elif 0.60 < roc_auc <= 0.70:
+            print(f"El clasificador es Pobre, {roc_auc}")
+          elif 0.50 < roc_auc <= 0.60:
+            print(f"El clasificador es Fallido, {roc_auc}")
+          else:
+            print(f"El clasificador Muy Malo, {roc_auc}")
+
+        else:
+          print("Falta ajustar el modelo, usar ajustar_modelo()")
+
+    def modelo_resumen(self):
+        """Imprime el summary del modelo ajustado
+        """
+        if self.resultado is not None:
+          print(self.resultado.summary())
+        else:
+          print("Falta ajustar el modelo, usar ajustar_modelo()")
+
+    def p_valor_betas(self, b_i=0, i=1):
+        """Es una funcion que retorna el p-valor de un test de hipotesis:
+                          H_0: beta_i = k vs H_1 beta_i != k
+            b_i: es el numero k sobre el cual se quiere hacer el test. Por
+            default es 0.
+            i: es el indice del beta que se quiere testear, es un natural i
+            (i = 0, ..., n). Por default es 1.
+        """
+        if self.resultado is None:
+          print("Falta ajustar el modelo, usar ajustar_modelo()")
+        else:
+          res = self.resultado
+          SE_est = res.bse
+          coef_xi = res.params[i]
+          # valor de t observado:
+          t_obs = (coef_xi - b_i)/SE_est[i]
+
+          # el pvalor:
+          X = res.model.exog # para recuperar la matriz de diseño del modelo
+          grados_libertad = len(X[:, i]) - 2
+          p_valor = 2 * stats.t.sf(abs(t_obs), df = grados_libertad)
+
+          print(f"p-valor: {p_valor}")
+          print(f"t_observado: {t_obs}")
