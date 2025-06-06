@@ -5,7 +5,7 @@ import scipy.stats as stats
 import statsmodels.api as sm
 from scipy.stats import pearsonr
 import pandas as pd
-from scipy.stats import norm, uniform, stats
+from scipy.stats import norm, uniform
 from statsmodels.stats.diagnostic import het_breuschpagan, het_white
 from scipy.stats import shapiro
 import random
@@ -42,9 +42,6 @@ class AnalisisDescriptivo:
         else:
             return 0
 
-    def densidad_cauchy(self, x):
-        """Estimación de la densidad utilizando el núcleo de Cauchy."""
-        #
     def densidad_nucleo(self, h, kernel, x):
         """Estimación de la densidad utilizando el kernel especificado."""
         n = len(self.datos)
@@ -126,17 +123,17 @@ class AnalisisDescriptivo:
             'Mínimo': np.min(self.datos),
             'Máximo': np.max(self.datos)
         }
-    def miqqplot(data):
-        x_ord = np.sort(data)
-        n = len(data)
+    def miqqplot(self):
+        x_ord = np.sort(self.datos)
+        n = len(self.datos)
         media = np.mean(x_ord)
         desvio = np.std(x_ord, ddof=1)
         cuantiles_muestrales = (x_ord - media) / desvio
 
-        probabilidades = np.arange(1, n+1) / n+1
+        probabilidades = np.arange(1, n+1) / (n+1)
         cuantiles_teoricos = norm.ppf(probabilidades)
 
-        sm.qqplot(data, line='45')
+        sm.qqplot(self.datos, line='45')
 
         plt.scatter(cuantiles_teoricos, cuantiles_muestrales, color='blue', marker='o')
         plt.xlabel('Cuantiles teóricos')
@@ -168,7 +165,7 @@ class GeneradoraDeDatos:
         p = norm.pdf(x, media, desvio)
         return p
 
-    def teorica_unif(a, b, nume_puntos = 1000):
+    def teorica_unif(self,a, b, nume_puntos = 1000):
         x = np.linspace(a-1 , b+1 , nume_puntos)
         y = uniform.pdf(x, loc= a, scale= b-a)
         return x,y
@@ -388,7 +385,7 @@ class RegresionLinealSimple(RegresionLineal):
         else:
           res = self.resultado
           # Crear la matriz de diseño con el nuevo punto de predicción
-          X_new = sm.add_constant(np.array([[1, x_new]]))
+          X_new = sm.add_constant(np.array([[ x_new]]))
           prediccion = res.predict(X_new)
           return prediccion
 
@@ -481,18 +478,16 @@ class RegresionLinealMultiple(RegresionLineal):
           explicativa para predecir.
         """
         if self.resultado is None:
-          print("Falta ajustar el modelo, usar ajustar_modelo()")
+            print("Falta ajustar el modelo, usar ajustar_modelo()")
+            return None
 
         else:
-          res = self.resultado
-          # Se crea una lista nueva con un 1 en la posicion 0
-          # considerando la lista x_new, asi: [1, x_new[0], x_new[1]]
-          X_new = x_new.copy()
-          X_new.insert(0, 1)
-          prediccion = np.dot(res.params, X_new)
-
-          return prediccion
-
+            res = self.resultado
+            # Se usa sm.add_constant para manejar el intercepto automáticamente
+            X_new_const = sm.add_constant(np.array(x_new).reshape(1, -1)) # Reshape para asegurar que sea 2D
+            prediccion = res.predict(X_new_const)[0]
+            return prediccion
+        
     def resumen_modelo(self):
         """Imprime el summary() del modelo ajustado.
         """
@@ -530,7 +525,7 @@ class RegresionLogistica:
         random.seed(seed)
         cant_filas_extraer = int(self.data.shape[0] * ptje_test)
         # Crear un vector de números aleatorios entre 0 y len(data)
-        cuales = random.sample(range( int(self.data.shape[0]) + 1 ), cant_filas_extraer)
+        cuales = random.sample(range( int(self.data.shape[0]) ), cant_filas_extraer)
         # datos train:
         self.data_train = self.data.drop(cuales)
         # datos test:
@@ -738,3 +733,5 @@ class RegresionLogistica:
 
           print(f"p-valor: {p_valor}")
           print(f"t_observado: {t_obs}")
+
+    
